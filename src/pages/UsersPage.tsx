@@ -1,80 +1,106 @@
 import { useState } from "react";
-import { User } from "../types";
+import type { User } from "../types";
+import { useSession } from "../context/SessionContext";
+import { isAdmin } from "../utils/auth";
+import { EmptyState } from "../components/states/States";
+
+// Seed data. NOTE: passwords are intentionally absent — the original starter
+// stored and rendered plaintext passwords in this table, which the API contract
+// explicitly forbids. A real client never receives password material.
+const SEED_USERS: User[] = [
+  { id: "1", email: "admin@penguwave.io", role: "admin", status: "active" },
+  { id: "2", email: "analyst@penguwave.io", role: "analyst", status: "active" },
+  { id: "3", email: "viewer@penguwave.io", role: "viewer", status: "disabled" },
+];
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function UsersPage() {
-  // TODO: add role check before rendering
-  // if (user.role !== 'admin') return null;
-
-  const [users, setUsers] = useState<User[]>([
-    { id: "1", email: "admin@penguwave.io", role: "admin", status: "active", password: "admin123" },
-    { id: "2", email: "analyst@penguwave.io", role: "analyst", status: "active", password: "pass456" },
-    { id: "3", email: "viewer@penguwave.io", role: "viewer", status: "disabled", password: "view789" },
-  ]);
-
+  const { session } = useSession();
+  const [users, setUsers] = useState<User[]>(SEED_USERS);
   const [showForm, setShowForm] = useState(false);
   const [newEmail, setNewEmail] = useState("");
-  const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState("analyst");
+  const [error, setError] = useState("");
+
+  // Authorization gate. The original page had a TODO admitting this was missing,
+  // so any visitor could manage users. We block non-admins in the UI; the real
+  // enforcement point is the backend (which should also return 403).
+  if (!isAdmin(session)) {
+    return (
+      <div className="page-container">
+        <EmptyState
+          icon="🔒"
+          title="Admins only"
+          message={
+            session
+              ? "Your role doesn’t have access to user management."
+              : "Sign in as an admin to manage users."
+          }
+        />
+      </div>
+    );
+  }
 
   const handleAddUser = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newEmail || !newPassword) return;
-
-    const newUser: User = {
-      id: String(Date.now()),
-      email: newEmail,
-      role: newRole,
-      status: "active",
-      password: newPassword,
-    };
-
-    setUsers([...users, newUser]);
+    const email = newEmail.trim().toLowerCase();
+    if (!EMAIL_RE.test(email)) {
+      setError("Enter a valid email address.");
+      return;
+    }
+    if (users.some((u) => u.email === email)) {
+      setError("A user with that email already exists.");
+      return;
+    }
+    // Password creation is a backend concern (hashing, policy) — the client only
+    // submits the request. We don't capture or store a password here.
+    setUsers((prev) => [...prev, { id: String(Date.now()), email, role: newRole, status: "active" }]);
     setNewEmail("");
-    setNewPassword("");
     setNewRole("analyst");
+    setError("");
     setShowForm(false);
   };
 
   const handleDelete = (id: string) => {
-    setUsers(users.filter((u) => u.id !== id));
+    if (id === "1") return; // guard: don't delete the seed admin in the demo
+    setUsers((prev) => prev.filter((u) => u.id !== id));
   };
 
   return (
     <div className="page-container">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <h1>User Management</h1>
-        <button className="btn-primary" onClick={() => setShowForm(!showForm)}>
+      <div className="page-header">
+        <div>
+          <h1>User Management</h1>
+          <p className="page-subtitle">Manage who can access PenguWave.</p>
+        </div>
+        <button className="btn-primary" onClick={() => setShowForm((s) => !s)}>
           {showForm ? "Cancel" : "Add User"}
         </button>
       </div>
 
       {showForm && (
-        <div style={{ border: "1px solid #ddd", padding: 16, marginBottom: 20, background: "#fafafa" }}>
-          <h3 style={{ marginBottom: 12 }}>New User</h3>
+        <div className="card" style={{ marginBottom: 18 }}>
+          <h3 style={{ marginBottom: 12, fontSize: 15 }}>New User</h3>
           <form onSubmit={handleAddUser}>
-            <div style={{ marginBottom: 8 }}>
-              <label>Email</label>
+            {error && (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="field" style={{ marginBottom: 12 }}>
+              <label htmlFor="new-email">Email</label>
               <input
+                id="new-email"
                 type="email"
                 value={newEmail}
                 onChange={(e) => setNewEmail(e.target.value)}
                 placeholder="user@penguwave.io"
-                required
               />
             </div>
-            <div style={{ marginBottom: 8 }}>
-              <label>Password</label>
-              <input
-                type="text"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="password"
-                required
-              />
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <label>Role</label>
-              <select value={newRole} onChange={(e) => setNewRole(e.target.value)}>
+            <div className="field" style={{ marginBottom: 14 }}>
+              <label htmlFor="new-role">Role</label>
+              <select id="new-role" value={newRole} onChange={(e) => setNewRole(e.target.value)} style={{ maxWidth: 220 }}>
                 <option value="admin">Admin</option>
                 <option value="analyst">Analyst</option>
                 <option value="viewer">Viewer</option>
@@ -87,45 +113,43 @@ export default function UsersPage() {
         </div>
       )}
 
-      <table>
-        <thead>
-          <tr>
-            <th>Email</th>
-            <th>Role</th>
-            <th>Status</th>
-            <th>Password</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map((user) => (
-            <tr key={user.id}>
-              <td>{user.email}</td>
-              <td>{user.role}</td>
-              <td>
-                <span style={{ color: user.status === "active" ? "green" : "#999" }}>
-                  {user.status}
-                </span>
-              </td>
-              <td style={{ fontFamily: "monospace", fontSize: 13 }}>{user.password}</td>
-              <td>
-                <a
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleDelete(user.id);
-                  }}
-                  style={{ color: "red" }}
-                >
-                  Delete
-                </a>
-              </td>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th aria-label="Actions" />
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {users.map((user) => (
+              <tr key={user.id}>
+                <td>{user.email}</td>
+                <td>{user.role}</td>
+                <td>
+                  <span style={{ color: user.status === "active" ? "var(--sev-low)" : "var(--text-faint)" }}>
+                    {user.status}
+                  </span>
+                </td>
+                <td style={{ textAlign: "right" }}>
+                  <button
+                    className="btn-ghost btn-danger"
+                    onClick={() => handleDelete(user.id)}
+                    disabled={user.id === "1"}
+                    title={user.id === "1" ? "The seed admin can’t be removed in the demo" : "Delete user"}
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-      {users.length === 0 && <p style={{ color: "#999" }}>No users.</p>}
+      {users.length === 0 && <EmptyState title="No users" message="Add a user to get started." />}
     </div>
   );
 }
