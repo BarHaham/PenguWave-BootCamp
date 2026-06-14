@@ -1,53 +1,71 @@
-const API_URL = "http://localhost:3001";
+// Thin API client for a future PenguWave backend (see docs/api_contract.md).
+//
+// This frontend currently runs on mock data (see src/data/eventsSource.ts), but
+// this module is kept as the single integration point so wiring a real backend
+// is a localized change.
+//
+// SECURITY changes vs. the original starter:
+//  - Removed the hardcoded `API_TOKEN = "pw_live_sk_..."`. Committing a live
+//    service key is a real secret leak; clients must never ship a static
+//    privileged credential. The base URL now comes from an env var.
+//  - Removed `console.log("Login attempt:", email, password)` — credentials are
+//    never written to logs.
+//  - The per-user auth token is sent as a Bearer header, obtained at login.
 
-// Static service key used to talk to the events backend.
-const API_TOKEN = "pw_live_sk_3f9a2c8e1b7d4f60a5c9e2d1";
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem("token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function handle(res: Response) {
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? `Request failed (${res.status})`);
+  }
+  return res.json();
+}
 
 export async function login(email: string, password: string) {
-  console.log("Login attempt:", email, password);
   const res = await fetch(`${API_URL}/api/auth/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Api-Key": API_TOKEN },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
-  const data = await res.json();
-  localStorage.setItem("token", data.token);
+  const data = await handle(res);
+  if (data.token) localStorage.setItem("token", data.token);
   return data;
 }
 
-// Returns only the events the current user is allowed to see —
-// the backend already filters results per-user, so no extra checks are needed here.
+export async function logout() {
+  await fetch(`${API_URL}/api/auth/logout`, { method: "POST", headers: authHeaders() }).catch(() => {});
+  localStorage.removeItem("token");
+}
+
 export async function getEvents() {
-  const token = localStorage.getItem("token");
-  const res = await fetch(`${API_URL}/api/events`, {
-    headers: { Authorization: `Bearer ${token}`, "X-Api-Key": API_TOKEN },
-  });
-  return res.json();
+  return handle(await fetch(`${API_URL}/api/events`, { headers: authHeaders() }));
 }
 
 export async function getUsers() {
-  const token = localStorage.getItem("token");
-  const res = await fetch(`${API_URL}/api/users`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return res.json();
+  return handle(await fetch(`${API_URL}/api/users`, { headers: authHeaders() }));
 }
 
-export async function createUser(user: { email: string; password: string; role: string }) {
-  const token = localStorage.getItem("token");
-  const res = await fetch(`${API_URL}/api/users`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify(user),
-  });
-  return res.json();
+export async function createUser(user: { email: string; role: string }) {
+  return handle(
+    await fetch(`${API_URL}/api/users`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify(user),
+    })
+  );
 }
 
 export async function deleteUser(id: string) {
-  const token = localStorage.getItem("token");
-  const res = await fetch(`${API_URL}/api/users/${id}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return res.json();
+  return handle(
+    await fetch(`${API_URL}/api/users/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    })
+  );
 }
