@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { User } from "../types";
 import { useSession } from "../context/SessionContext";
 import { isAdmin } from "../utils/auth";
@@ -15,13 +15,50 @@ const SEED_USERS: User[] = [
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Frontend-only persistence. This is a browser API, not a backend — when the
+// Track A backend lands, these two helpers get swapped for the `src/api.ts`
+// users client. We persist the *whole* list (defaults + custom, minus any the
+// admin deleted), so seeded users survive a reload without resurrecting ones
+// that were intentionally removed. SEED_USERS is the fallback only when storage
+// is empty or unreadable/corrupt.
+const LS_KEY = "penguwave_users";
+
+function loadUsers(): User[] {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return SEED_USERS;
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return SEED_USERS;
+    const valid = parsed.filter(
+      (u): u is User =>
+        !!u && typeof u === "object" && typeof (u as User).id === "string" && typeof (u as User).email === "string"
+    );
+    return valid.length > 0 ? valid : SEED_USERS;
+  } catch {
+    return SEED_USERS;
+  }
+}
+
+function saveUsers(users: User[]): void {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(users));
+  } catch {
+    /* storage may be unavailable (private mode / quota) — non-fatal */
+  }
+}
+
 export default function UsersPage() {
   const { session } = useSession();
-  const [users, setUsers] = useState<User[]>(SEED_USERS);
+  const [users, setUsers] = useState<User[]>(loadUsers);
   const [showForm, setShowForm] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [newRole, setNewRole] = useState("analyst");
   const [error, setError] = useState("");
+
+  // Persist any change (add / delete) so the list survives navigation + reload.
+  useEffect(() => {
+    saveUsers(users);
+  }, [users]);
 
   // Authorization gate. The original page had a TODO admitting this was missing,
   // so any visitor could manage users. We block non-admins in the UI; the real
@@ -82,7 +119,9 @@ export default function UsersPage() {
       {showForm && (
         <div className="card" style={{ marginBottom: 18 }}>
           <h3 style={{ marginBottom: 12, fontSize: 15 }}>New User</h3>
-          <form onSubmit={handleAddUser}>
+          {/* Cap the form width so Email and Role line up at the same size
+              instead of the email sprawling across the whole card. */}
+          <form onSubmit={handleAddUser} style={{ maxWidth: 380 }}>
             {error && (
               <p className="form-error" role="alert">
                 {error}
@@ -100,7 +139,7 @@ export default function UsersPage() {
             </div>
             <div className="field" style={{ marginBottom: 14 }}>
               <label htmlFor="new-role">Role</label>
-              <select id="new-role" value={newRole} onChange={(e) => setNewRole(e.target.value)} style={{ maxWidth: 220 }}>
+              <select id="new-role" value={newRole} onChange={(e) => setNewRole(e.target.value)}>
                 <option value="admin">Admin</option>
                 <option value="analyst">Analyst</option>
                 <option value="viewer">Viewer</option>
