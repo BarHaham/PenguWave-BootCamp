@@ -1,16 +1,21 @@
 // Display formatting helpers.
 
-/** Absolute, locale-aware timestamp, or a placeholder for unparseable input. */
+/**
+ * Absolute timestamp in a fixed, unambiguous format for security ops —
+ * "Feb 18, 2025, 04:32 PM". en-US locale + hour12 keep it consistent across
+ * machines (analysts comparing notes shouldn't see different formats).
+ */
 export function formatAbsolute(iso: string): string {
   if (!iso) return "Unknown time";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "Invalid date";
-  return d.toLocaleString(undefined, {
+  return d.toLocaleString("en-US", {
     year: "numeric",
     month: "short",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    hour12: true,
   });
 }
 
@@ -39,4 +44,30 @@ export function formatRelative(iso: string, now: number = Date.now()): string {
     }
   }
   return "just now";
+}
+
+const SEVEN_DAYS_MS = 1000 * 60 * 60 * 24 * 7;
+
+/**
+ * Time display tuned for incident investigation:
+ *  - Events within the last 7 days show relative time ("2 hours ago") with the
+ *    exact timestamp in `title` (hover) so the precise time is one hover away.
+ *  - Older events show the full absolute timestamp directly — relative ages like
+ *    "last year" are useless for forensics.
+ * Future-dated and unparseable timestamps fall back to the absolute form.
+ */
+export function formatEventTime(
+  iso: string,
+  now: number = Date.now()
+): { display: string; title: string } {
+  const absolute = formatAbsolute(iso);
+  if (!iso) return { display: absolute, title: absolute };
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { display: absolute, title: absolute };
+
+  const age = now - d.getTime();
+  if (age >= 0 && age < SEVEN_DAYS_MS) {
+    return { display: formatRelative(iso, now), title: absolute };
+  }
+  return { display: absolute, title: absolute };
 }

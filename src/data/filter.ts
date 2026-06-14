@@ -19,7 +19,9 @@ export const DEFAULT_FILTERS: FilterState = {
   tags: [],
   from: "",
   to: "",
-  sortKey: "timestamp",
+  // Security-ops default: most-critical-first. Analysts must never have a
+  // CRITICAL threat buried below lower-severity noise.
+  sortKey: "severity",
   sortDir: "desc",
 };
 
@@ -63,6 +65,11 @@ export function filterAndSort(events: SecurityEvent[], f: FilterState): Security
     return true;
   });
 
+  // CRITICAL → LOW, independent of sort direction. Used both as the primary
+  // ranking when sorting by severity and as the secondary ranking otherwise.
+  const bySeverity = (a: SecurityEvent, b: SecurityEvent) =>
+    SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity];
+
   const dir = f.sortDir === "asc" ? 1 : -1;
   const sorted = [...filtered].sort((a, b) => {
     let cmp = 0;
@@ -84,9 +91,21 @@ export function filterAndSort(events: SecurityEvent[], f: FilterState): Security
         break;
       }
     }
-    // Stable tiebreaker so equal keys keep a deterministic order.
+    cmp *= dir;
+
+    // Severity is always the secondary sort (skipped when it's already primary),
+    // so within any group of equal primary keys the most critical threats still
+    // surface first. This is NOT flipped by sortDir — CRITICAL stays on top.
+    if (cmp === 0 && f.sortKey !== "severity") cmp = bySeverity(a, b);
+
+    // Then most-recent-first, then a stable id tiebreaker for determinism.
+    if (cmp === 0) {
+      const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      cmp = tb - ta;
+    }
     if (cmp === 0) cmp = a.id.localeCompare(b.id);
-    return cmp * dir;
+    return cmp;
   });
 
   return sorted;

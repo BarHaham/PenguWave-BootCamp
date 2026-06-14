@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { DEFAULT_FILTERS, type FilterState, type SortDir, type SortKey } from "../data/filter";
 import { SEVERITIES, type Severity } from "../types";
 
-const LS_KEY = "pw_event_filters";
+const SORT_KEYS: readonly SortKey[] = ["timestamp", "severity", "title", "assetHostname"];
+const SORT_DIRS: readonly SortDir[] = ["asc", "desc"];
+
+const validSortKey = (v: unknown): SortKey =>
+  (SORT_KEYS as readonly string[]).includes(v as string) ? (v as SortKey) : DEFAULT_FILTERS.sortKey;
+const validSortDir = (v: unknown): SortDir =>
+  (SORT_DIRS as readonly string[]).includes(v as string) ? (v as SortDir) : DEFAULT_FILTERS.sortDir;
 
 function parseFromParams(params: URLSearchParams): FilterState | null {
   if ([...params.keys()].length === 0) return null;
@@ -17,8 +23,8 @@ function parseFromParams(params: URLSearchParams): FilterState | null {
     tags,
     from: params.get("from") ?? "",
     to: params.get("to") ?? "",
-    sortKey: (params.get("sort") as SortKey) || DEFAULT_FILTERS.sortKey,
-    sortDir: (params.get("dir") as SortDir) || DEFAULT_FILTERS.sortDir,
+    sortKey: validSortKey(params.get("sort")),
+    sortDir: validSortDir(params.get("dir")),
   };
 }
 
@@ -34,37 +40,22 @@ function toParams(f: FilterState): URLSearchParams {
   return p;
 }
 
-function loadFromStorage(): FilterState | null {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    return raw ? { ...DEFAULT_FILTERS, ...(JSON.parse(raw) as Partial<FilterState>) } : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
- * Filter state with two-way persistence:
- *  - URL query params make any filtered view shareable / bookmarkable / back-able.
- *  - localStorage restores the analyst's last view on a fresh visit (no params).
- * URL wins over storage when present.
+ * Filter state lives entirely in the URL query params — the single source of
+ * truth. This makes any filtered view shareable / bookmarkable / back-able, and,
+ * importantly, makes an empty URL mean "no filters" unconditionally:
+ *  - Arriving at `/events?sev=CRITICAL` (e.g. an Overview severity badge) applies
+ *    that filter.
+ *  - Arriving at a bare `/events` (the main nav link) shows all events — a clean
+ *    slate. There is no localStorage restore that could resurrect a stale filter.
  */
 export function useEventFilters() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const filters = useMemo<FilterState>(() => {
-    return parseFromParams(searchParams) ?? loadFromStorage() ?? DEFAULT_FILTERS;
+    return parseFromParams(searchParams) ?? DEFAULT_FILTERS;
     // Re-derive whenever the URL changes.
   }, [searchParams]);
-
-  // Mirror current filters into localStorage.
-  useEffect(() => {
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify(filters));
-    } catch {
-      /* storage may be unavailable (private mode) — non-fatal */
-    }
-  }, [filters]);
 
   const setFilters = useCallback(
     (next: FilterState) => {

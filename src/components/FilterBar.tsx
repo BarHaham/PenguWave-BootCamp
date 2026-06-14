@@ -60,7 +60,7 @@ export default function FilterBar({ filters, patch, allTags }: Props) {
           {SEVERITIES.map((s) => (
             <button
               key={s}
-              className="sev-pill"
+              className={`sev-pill sev-pill-${s}`}
               aria-pressed={filters.severities.includes(s)}
               onClick={() => toggleSeverity(s)}
             >

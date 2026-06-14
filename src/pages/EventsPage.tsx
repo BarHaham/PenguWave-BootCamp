@@ -8,7 +8,7 @@ import FilterBar from "../components/FilterBar";
 import ExportMenu from "../components/ExportMenu";
 import EventDetailPanel from "../components/EventDetailPanel";
 import { TableSkeleton, EmptyState, ErrorState } from "../components/states/States";
-import { formatAbsolute, formatRelative } from "../utils/format";
+import { formatEventTime } from "../utils/format";
 
 const COLUMNS: { key: SortKey; label: string }[] = [
   { key: "severity", label: "Severity" },
@@ -151,9 +151,14 @@ export default function EventsPage() {
                       </td>
                       <td className="cell-title">{e.title}</td>
                       <td className="mono">{e.assetHostname}</td>
-                      <td className="cell-time" title={formatAbsolute(e.timestamp)}>
-                        {formatRelative(e.timestamp)}
-                      </td>
+                      {(() => {
+                        const t = formatEventTime(e.timestamp);
+                        return (
+                          <td className="cell-time" title={t.title}>
+                            {t.display}
+                          </td>
+                        );
+                      })()}
                     </tr>
                   ))}
                 </tbody>

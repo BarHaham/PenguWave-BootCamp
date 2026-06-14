@@ -101,7 +101,12 @@ export default function DashboardPage() {
         <StatCard label="Last 24 hours" value={stats.last24h} />
         <StatCard label="Last 7 days" value={stats.last7d} />
         <StatCard label="Last 30 days" value={stats.last30d} />
-        <StatCard label="Critical + High" value={criticalAndHigh} accent={SEVERITY_VAR.CRITICAL} />
+        <StatCard
+          label="Critical + High"
+          value={criticalAndHigh}
+          accent={SEVERITY_VAR.CRITICAL}
+          onClick={() => goToEvents({ sev: "CRITICAL,HIGH" })}
+        />
       </div>
 
       {/* Severity distribution + timeline */}

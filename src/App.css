@@ -194,6 +194,22 @@ a {
   padding: 16px;
   position: relative;
   overflow: hidden;
+  /* Cards with an onClick render as <button>, which otherwise inherits the UA's
+     dark default text color — make every card use the light theme color so the
+     value/label stay readable whether the card is a button or a div. */
+  color: var(--text);
+}
+
+/* Only clickable cards (rendered as <button>) get a hover affordance, so it's
+   clear which cards drill into the events table and which are read-only. */
+button.stat-card {
+  transition: border-color 0.12s, background 0.12s, transform 0.12s;
+}
+
+button.stat-card:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-elev-2);
+  transform: translateY(-1px);
 }
 
 .stat-card .stat-value {
@@ -414,8 +430,11 @@ label {
 }
 
 .sev-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   padding: 6px 11px;
   border-radius: 999px;
   border: 1px solid var(--border-strong);
@@ -423,13 +442,38 @@ label {
   color: var(--text-dim);
   cursor: pointer;
   width: auto;
+  transition: background 0.12s, color 0.12s, border-color 0.12s, opacity 0.12s;
 }
 
-.sev-pill[aria-pressed="true"] {
-  color: var(--text);
-  border-color: var(--brand);
-  background: var(--brand-dim);
+.sev-pill:hover {
+  filter: brightness(1.18);
 }
+
+/* Inactive pills carry a faint hint of their severity color so each is
+   identifiable at a glance, even when not selected. */
+.sev-pill-CRITICAL { color: var(--sev-critical); border-color: color-mix(in srgb, var(--sev-critical) 40%, transparent); }
+.sev-pill-HIGH     { color: var(--sev-high);     border-color: color-mix(in srgb, var(--sev-high) 40%, transparent); }
+.sev-pill-MEDIUM   { color: var(--sev-medium);   border-color: color-mix(in srgb, var(--sev-medium) 40%, transparent); }
+.sev-pill-LOW      { color: var(--sev-low);      border-color: color-mix(in srgb, var(--sev-low) 40%, transparent); }
+
+/* Active = solid fill in the severity color + a checkmark, so it's unmistakable
+   when one — or several — severities are selected at once. */
+.sev-pill[aria-pressed="true"] {
+  color: #0b0e14;
+  border-color: transparent;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+}
+
+.sev-pill[aria-pressed="true"]::before {
+  content: "✓";
+  font-weight: 900;
+  font-size: 11px;
+}
+
+.sev-pill-CRITICAL[aria-pressed="true"] { background: var(--sev-critical); }
+.sev-pill-HIGH[aria-pressed="true"]     { background: var(--sev-high); }
+.sev-pill-MEDIUM[aria-pressed="true"]   { background: var(--sev-medium); }
+.sev-pill-LOW[aria-pressed="true"]      { background: var(--sev-low); }
 
 .tag-chip {
   display: inline-flex;
