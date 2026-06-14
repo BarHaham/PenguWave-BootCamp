@@ -27,9 +27,10 @@ npm run lint     # eslint (clean)
 - **Events workspace** — debounced full-text search; multi-select severity, tag,
   and date-range filters; sortable columns; a slide-over **detail panel** with
   metadata, related events, and the raw JSON.
-- **Filter persistence** — active filters live in the **URL** (shareable /
-  bookmarkable / back-button friendly) and are mirrored to **localStorage** so an
-  analyst's last view is restored on return.
+- **URL-driven filters** — active filters live entirely in the **URL** (shareable
+  / bookmarkable / back-button friendly). A filtered link like
+  `/events?sev=CRITICAL,HIGH` reproduces the exact view; the bare `/events` nav
+  link is always a clean slate.
 - **Export** — download the *current filtered view* as CSV or JSON.
 - **Robust state handling** — loading skeletons, separate empty vs. no-match
   states, an error state with retry, and a banner when malformed records are
@@ -53,9 +54,11 @@ npm run lint     # eslint (clean)
   browser is instant and gives the best UX. At real scale this moves
   server-side; the `filterAndSort` function and the `useEvents` async boundary
   are structured so that swap is localized.
-- **URL as the source of truth for filters.** Shareable investigative views beat
-  hidden in-memory state for a SOC tool; localStorage is the fallback for a fresh
-  visit.
+- **URL as the single source of truth for filters.** Shareable investigative
+  views beat hidden in-memory state for a SOC tool. I deliberately do *not*
+  persist filters to localStorage: navigating to **Events** should give a clean
+  slate, while arriving from an Overview tile (`?sev=…`) should preserve intent.
+  Deriving state purely from the URL makes both behaviors fall out for free.
 - **Auth is an honest UX gate.** There's no backend, so I don't pretend to verify
   credentials. The session drives role-aware UI; real authn/authz is a backend
   concern (Track A) and the UI gate is explicitly *not* a trust boundary.
