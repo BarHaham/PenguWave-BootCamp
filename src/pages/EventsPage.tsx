@@ -1,158 +1,175 @@
-import { useState } from "react";
-import mockEvents from "../../data/mock_events.json";
-import { SecurityEvent } from "../types";
-import { sanitizeHtml } from "../utils";
+import { useMemo, useState } from "react";
+import { useEvents } from "../hooks/useEvents";
+import { useEventFilters } from "../hooks/useEventFilters";
+import { activeFilterCount, filterAndSort, type SortKey } from "../data/filter";
+import type { SecurityEvent } from "../types";
+import SeverityBadge from "../components/SeverityBadge";
+import FilterBar from "../components/FilterBar";
+import ExportMenu from "../components/ExportMenu";
+import EventDetailPanel from "../components/EventDetailPanel";
+import { TableSkeleton, EmptyState, ErrorState } from "../components/states/States";
+import { formatAbsolute, formatRelative } from "../utils/format";
+
+const COLUMNS: { key: SortKey; label: string }[] = [
+  { key: "severity", label: "Severity" },
+  { key: "title", label: "Title" },
+  { key: "assetHostname", label: "Asset" },
+  { key: "timestamp", label: "Time" },
+];
 
 export default function EventsPage() {
-  const [search, setSearch] = useState("");
-  const [severityFilter, setSeverityFilter] = useState("ALL");
-  const [selectedEvent, setSelectedEvent] = useState<SecurityEvent | null>(null);
+  const { status, events, dropped, error, reload } = useEvents();
+  const { filters, patch, reset } = useEventFilters();
+  const [selected, setSelected] = useState<SecurityEvent | null>(null);
 
-  const events = mockEvents as SecurityEvent[];
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    events.forEach((e) => e.tags.forEach((t) => set.add(t)));
+    return [...set].sort();
+  }, [events]);
 
-  const filtered = events.filter((e) => {
-    const matchesSearch =
-      e.title.toLowerCase().includes(search.toLowerCase()) ||
-      e.description.toLowerCase().includes(search.toLowerCase()) ||
-      e.assetHostname.toLowerCase().includes(search.toLowerCase());
-    const matchesSeverity = severityFilter === "ALL" || e.severity === severityFilter;
-    return matchesSearch && matchesSeverity;
-  });
+  const visible = useMemo(() => filterAndSort(events, filters), [events, filters]);
 
-  const severityColor = (s: string) => {
-    if (s === "HIGH") return "red";
-    if (s === "MEDIUM") return "orange";
-    return "green";
+  // "Related events": same asset or a shared tag, excluding the event itself.
+  const related = useMemo(() => {
+    if (!selected) return [];
+    return events
+      .filter(
+        (e) =>
+          e.id !== selected.id &&
+          (e.assetHostname === selected.assetHostname ||
+            e.tags.some((t) => selected.tags.includes(t)))
+      )
+      .slice(0, 6);
+  }, [selected, events]);
+
+  const toggleSort = (key: SortKey) => {
+    if (filters.sortKey === key) {
+      patch({ sortDir: filters.sortDir === "asc" ? "desc" : "asc" });
+    } else {
+      patch({ sortKey: key, sortDir: key === "title" || key === "assetHostname" ? "asc" : "desc" });
+    }
   };
+
+  const activeCount = activeFilterCount(filters);
 
   return (
     <div className="page-container">
-      <h1>Security Events</h1>
-
-      <div style={{ marginBottom: 16, display: "flex", gap: 12, alignItems: "center" }}>
-        <input
-          type="text"
-          placeholder="Search events..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ width: "100%", maxWidth: 400 }}
-        />
-        <select
-          value={severityFilter}
-          onChange={(e) => setSeverityFilter(e.target.value)}
-          style={{ width: 140 }}
-        >
-          <option value="ALL">All Severities</option>
-          <option value="HIGH">High</option>
-          <option value="MEDIUM">Medium</option>
-          <option value="LOW">Low</option>
-        </select>
+      <div className="page-header">
+        <div>
+          <h1>Security Events</h1>
+          <p className="page-subtitle">Investigate, filter, and export security telemetry.</p>
+        </div>
+        <ExportMenu events={visible} />
       </div>
 
-      {search && (
-        <p>
-          <span
-            dangerouslySetInnerHTML={{
-              __html: sanitizeHtml("Showing results for: <strong>" + search + "</strong>"),
-            }}
-          />
-          {" "}({filtered.length} events)
-        </p>
+      {dropped > 0 && (
+        <div className="banner" role="status">
+          ⚠️ {dropped} malformed record{dropped === 1 ? "" : "s"} could not be parsed and were
+          skipped.
+        </div>
       )}
 
-      <table>
-        <thead>
-          <tr>
-            <th>Severity</th>
-            <th>Title</th>
-            <th>Asset</th>
-            <th>Source IP</th>
-            <th>Timestamp</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filtered.map((event) => (
-            <tr
-              key={event.id}
-              onClick={() => setSelectedEvent(event)}
-              style={{ cursor: "pointer" }}
-            >
-              <td style={{ color: severityColor(event.severity), fontWeight: 600 }}>
-                {event.severity}
-              </td>
-              <td>{event.title}</td>
-              <td style={{ fontFamily: "monospace", fontSize: 13 }}>
-                {event.assetHostname}
-              </td>
-              <td style={{ fontFamily: "monospace", fontSize: 13 }}>
-                {event.sourceIp}
-              </td>
-              <td style={{ fontSize: 13 }}>
-                {new Date(event.timestamp).toLocaleString()}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <FilterBar filters={filters} patch={patch} allTags={allTags} />
 
-      {filtered.length === 0 && <p style={{ color: "#999" }}>No events found.</p>}
+      {status === "loading" && <TableSkeleton />}
 
-      <div style={{ marginTop: 12 }}>
-        <button
-          onClick={() => {
-            const blob = new Blob([JSON.stringify(filtered, null, 2)], { type: "application/json" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = "penguwave_events_export.json";
-            a.click();
-            URL.revokeObjectURL(url);
-          }}
-          style={{ fontSize: 13 }}
-        >
-          Export Events (JSON)
-        </button>
-      </div>
+      {status === "error" && <ErrorState message={error ?? "Unknown error"} onRetry={reload} />}
 
-      {/* Inline event detail */}
-      {selectedEvent && (
-        <div className="event-detail">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h2>{selectedEvent.title}</h2>
-            <button onClick={() => setSelectedEvent(null)} style={{ cursor: "pointer" }}>
-              Close
-            </button>
-          </div>
-          <p>
-            <strong>Severity:</strong>{" "}
-            <span style={{ color: severityColor(selectedEvent.severity) }}>
-              {selectedEvent.severity}
+      {status === "success" && (
+        <>
+          <div className="results-meta">
+            <span>
+              Showing <strong>{visible.length}</strong> of {events.length} events
             </span>
-          </p>
-          <p>
-            <strong>Description:</strong>
-          </p>
-          {/* render rich text descriptions */}
-          <div
-            ref={(el) => {
-              if (el) el.innerHTML = sanitizeHtml(selectedEvent.description);
-            }}
-          />
-          <p>
-            <strong>Asset:</strong> {selectedEvent.assetHostname} ({selectedEvent.assetIp})
-          </p>
-          <p>
-            <strong>Source IP:</strong> {selectedEvent.sourceIp}
-          </p>
-          <p>
-            <strong>Tags:</strong> {selectedEvent.tags.join(", ")}
-          </p>
-          <p>
-            <strong>Timestamp:</strong> {new Date(selectedEvent.timestamp).toLocaleString()}
-          </p>
-          <h3>Raw Event Data</h3>
-          <pre>{JSON.stringify(selectedEvent, null, 2)}</pre>
-        </div>
+            {activeCount > 0 && (
+              <button className="btn-ghost" onClick={reset}>
+                Clear {activeCount} filter{activeCount === 1 ? "" : "s"} ✕
+              </button>
+            )}
+          </div>
+
+          {visible.length === 0 ? (
+            events.length === 0 ? (
+              <EmptyState
+                icon="🐧"
+                title="No events yet"
+                message="There are no security events to display."
+              />
+            ) : (
+              <EmptyState
+                title="No events match your filters"
+                message="Try broadening your search or clearing some filters."
+                action={
+                  <button className="btn-primary" onClick={reset}>
+                    Clear all filters
+                  </button>
+                }
+              />
+            )
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    {COLUMNS.map((c) => {
+                      const active = filters.sortKey === c.key;
+                      return (
+                        <th
+                          key={c.key}
+                          className="sortable"
+                          onClick={() => toggleSort(c.key)}
+                          aria-sort={
+                            active ? (filters.sortDir === "asc" ? "ascending" : "descending") : "none"
+                          }
+                        >
+                          {c.label}
+                          {active && (
+                            <span className="sort-arrow" aria-hidden>
+                              {filters.sortDir === "asc" ? "▲" : "▼"}
+                            </span>
+                          )}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map((e) => (
+                    <tr
+                      key={e.id}
+                      className={`row-clickable ${selected?.id === e.id ? "row-selected" : ""}`}
+                      onClick={() => setSelected(e)}
+                      tabIndex={0}
+                      onKeyDown={(ev) =>
+                        (ev.key === "Enter" || ev.key === " ") && (ev.preventDefault(), setSelected(e))
+                      }
+                      aria-label={`${e.severity} — ${e.title}`}
+                    >
+                      <td>
+                        <SeverityBadge severity={e.severity} />
+                      </td>
+                      <td className="cell-title">{e.title}</td>
+                      <td className="mono">{e.assetHostname}</td>
+                      <td className="cell-time" title={formatAbsolute(e.timestamp)}>
+                        {formatRelative(e.timestamp)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {selected && (
+        <EventDetailPanel
+          event={selected}
+          related={related}
+          onClose={() => setSelected(null)}
+          onSelectRelated={(e) => setSelected(e)}
+        />
       )}
     </div>
   );
